@@ -1,0 +1,474 @@
+"""
+Read output file from CE-QUAL-W2 model and make 2D animation of output
+Kurt Hellmann, Rowan Gaffney, and John Volk  
+Python 2
+"""
+import numpy as np ##used for a variety of purposes, mainly arrays
+import matplotlib ## Used for graphing
+matplotlib.use('Agg') ## This is used to stop graphs from displaying in the script
+import matplotlib.pyplot as plt ## Used for graphing
+import pandas as pd ##used extensively for dataframe building and many other purposes
+from IPython.display import display, clear_output
+from matplotlib.ticker import AutoMinorLocator ## This package is used to create the minor ticks ##
+%pylab inline 
+## the line above is used to display output. You should keep if you want to see what this script does##
+
+
+## WHEN USING A DIFFERNT FILE YOU MUST CHANGE THIS CODE ##
+
+with open('snp.opt', 'r') as input_f: #opens file <---IF YOU ARE USING A DIFFERENT FILE, BE SURE TO CHANGE THE NAME OF FILE HERE
+    input_lines = input_f.readlines() #reads lines of file
+
+## read in file using fixed width reader, needed to look at data array in file to know character widths ##
+
+df = pd.read_fwf('snp.opt', widths=[6,8]+[10]*42) #Creates a data frame with that observes entirity of river segments
+
+
+## makes a list of all the line indices in the file that indicate where important data begins
+inds = []
+for i, line in enumerate(input_lines): #enumerates file lines
+    if 'Julian day = ' in line and 'Temperature [T1], <o/>C' in line:
+        inds.append(i)
+len(inds) #it's important to check that the length of 'inds' matches the length of 'endinds'
+
+## makes a list of all the line end indices in the file that indicate where important data ends
+## *** THIS ONLY WORKS IF YOU ARE ONLY LOOKING AT A SINGLE VARIABLE IN THE W2 MODEL **** ####
+## Therefore one cannot be looking at both temperature AND water velocity at the same time in the snp file ##
+## If one is attempting to do so, you must change the '   59  ' ending index marker to something else ##
+
+endinds = []
+for i, line in enumerate(input_lines):
+    if line.startswith('   59  '): ## This mark is unique with spacing in combination with the number. Therefore, this is a suitable marking for the last layer.
+        endinds.append(i+1)  #goes to the next line (so we include layer 59)                   
+len(endinds) #it's important to check that the length of 'inds' matches the length of 'endinds'
+
+
+bothind = zip(inds,endinds) ##combines inds and endinds together into one single list <---using tuples (paired numbers)
+len(bothind) #it's important to check that the length of 'bothind' matches the amount of days of data
+
+### Dates meant to be used in the animation ###
+
+olddate = []
+date = []
+for i, line in enumerate(input_lines):
+    if 'Julian day = ' in line and 'Temperature [T1], <o/>C' in line:
+        words = line.split() #used to separate words in entire line
+        olddate.append(words[:3]) #since we only want the first three 'words' or sets of objects separated by a space, we do so in this line.
+for i in olddate:
+    day = [i[0] + ' ' + i[1] + ' ' + i[2]] #combines first three objects to make the date
+    date.append(day)
+#date[:]
+
+
+###Extracts only first 'day' of data that we want from the snp file###  (this code has implemented null/empty layers too)
+
+firsttest = df.ix[inds[0]+2:endinds[0]-2] #data that we want, extends to all segments though.
+cols = df.ix[inds[0]+1] #establishes columns of dataframe
+firsttest.columns = cols # makes columns into an index
+testdata = firsttest[[x for x in firsttest.columns if (x) >= 32. and (x) <=41. or (x) >=15. and (x) <=21. or (x) == 'Layer']] #redefining the dataframe to look at the McCloud River only
+testdata = testdata[['Layer',32,33,34,35,36,37,38,39,40,41,15,16,17,18,19,20,21]] #organizing segments into correct order
+testdata['Layer'].index = (testdata['Layer']) #makes an index of layers
+test_layer = testdata['Layer'].tolist() ##converting layer column to a list
+addlayer = [int(testdata['Layer'][0]) - 1] ## this is important for correctlayers function. Keeps track of added (null) layers
+oldstart = int(testdata['Layer'][0]) ## this is important for correctlayers function. Keeps track of the starting layer before adding another null layer.
+def correctlayers(somedata): #this function starts counting down from lowest valued layer that has water all the way to Layer 1
+    newstart = int(somedata['Layer'][0]) - 1 #the next top layer will be one less than previous
+    while int(newstart) >= 2:  ## while the integer of the newstart variable is less than or equal to 2....
+        test_layer.insert(0,newstart) ## insert the newstart value at the beginning of the list 'test_layer'.
+        newstart = newstart - 1 ## newstart is now defined as the previous newstart minus one.
+        addlayer.insert(0,newstart) #this is a new list that only has the added empty layers
+correctlayers(testdata) #calling the function
+#test_layer = map(int, test_layer) #converting everything to int -- has all layers 
+wlayer = test_layer[oldstart -1:] #separating out layers with water from those without
+test_layer = addlayer + wlayer #combining NaN layers and layers with water
+nulldata = testdata.ix[addlayer,testdata.columns] #somehow the layer numbers do not show up. Values under layer column show as 'NaN'
+nulldata['Layer'].index = np.arange(len(nulldata['Layer'])) 
+nulldata['Layer'] = addlayer[:] #imputed layer numbers into 'layer column' 
+testdata = nulldata.append(testdata)
+dicts = [{'Layer': 60}] #adding the 60th layer. The index value for this new layer is zero. It doesn't seem to create any issues.
+testdata = testdata.append(dicts, ignore_index=False) #adding the 60th layer. The index value for this new layer is zero. It doesn't seem to create any issues.
+#testdata 
+
+##Some of this code is repeated down below in later parts of the script. Bascially, a lot of this stuff above is unnecessary, 
+##except for the correctlayers function,but it is a good idea to use this to make sure that the file is being read properly 
+##before reading the entire file.
+
+
+## FOR McCLOUD RIVER ONLY ##
+#Extracts all data that we want from snp. Also includes the null layers for all data#
+##Refer to code in box above to see what specific lines are doing##
+
+firsttest = df.ix[inds[0]+2:endinds[0]-2]#data range that we want, extends to all segments though.
+cols = df.ix[inds[0]+1]
+firsttest.columns = cols
+testdata = firsttest[[x for x in firsttest.columns if (x) >= 32. and (x) <=41. or (x) >=15. and (x) <=21. or (x) == 'Layer']] #looks at the McCloud River only
+testdata = testdata[['Layer',32,33,34,35,36,37,38,39,40,41,15,16,17,18,19,20,21]] #organizes segments
+testdata['Layer'].index = (testdata['Layer'])
+test_layer = testdata['Layer'].tolist()
+addlayer = [int(testdata['Layer'][0]) - 1]
+oldstart = int(testdata['Layer'][0])
+correctlayers(testdata) #look at box above to see exactly what this function does.
+test_layer = map(float, test_layer) 
+wlayer = test_layer[oldstart - 1:]
+test_layer = addlayer + wlayer 
+nulldata = df.ix[addlayer,testdata.columns]
+nulldata['Layer'].index = np.arange(len(nulldata['Layer'])) 
+nulldata['Layer'] = addlayer[:] 
+firstdata = nulldata.append(testdata) #adding the 'null' layers to the already existing data from snp
+comdata = firstdata #establishes the first 'day' of data. The dataframe is now called 'comdata'
+dicts = [{'Layer': 60}]
+comdata = comdata.append(dicts, ignore_index=False)
+comdata['timeshot']=1 ## Start of the 'timeshot' column to keep track of days
+
+#first = firstdata[27:29] ##<--used to check to make the loop is reading the whole file. You may change numbers depending on which specific layer you want showing
+
+x2=1 ## This establishes our counter for the timeshot columns <---this is important for iteration 
+
+
+for t in bothind[1:]: #We use the number '1' because we already extracted the '0' with the firstdata.
+    x2=x2+1 ## Adds one to the timeshot counter
+    test = df.ix[t[0]+2:t[1]-2] 
+    cols = df.ix[t[0]+1]
+    test.columns = cols
+    mtest = test[[x for x in test.columns if (x) >= 32. and (x) <=41. or (x) >=15. and (x) <=21. or (x) == 'Layer']]
+    mtest = mtest[['Layer',32,33,34,35,36,37,38,39,40,41,15,16,17,18,19,20,21]] 
+    mtest['Layer'].index = (mtest['Layer'])
+    test.layer = mtest['Layer'].tolist()
+    addlayer = [int(mtest['Layer'][0]) - 1]
+    oldstart = int(mtest['Layer'][0])
+    correctlayers(mtest) 
+    #test.layer = map(float, test.layer) 
+    wlayer = test.layer[oldstart - 1:]
+    test.layer = addlayer + wlayer 
+    nulldata = df.ix[addlayer,mtest.columns] 
+    nulldata['Layer'].index = np.arange(len(nulldata['Layer'])) 
+    nulldata['Layer'] = addlayer[:]
+    dicts = [{'Layer': 60}]
+    mtest = mtest.append(dicts, ignore_index=False)
+    finaldata = nulldata.append(mtest) 
+    finaldata['timeshot']=x2 #imputes timeshot value in the timeshot column
+    comdata = comdata.append(finaldata) #adding 'day' to the comdata dataframe.
+    #first = first.append(finaldata[27:29]) ##<--use when trying to output just a single line (or more) of code from each iteration
+    comdata.columns = finaldata.columns #makes sure that the columns of finaldata (used for each day) is the same as the final dataframe 'comdata'   
+
+#comdata[2580:2680]
+
+#first ## use when trying to output just a single line of code from each iteration
+
+##Refer to code in box above to see what specific lines are doing if there is confusion##
+
+
+## This coding adds an elevation column to the dataframe. This is important for graphing purposes. 
+## Some layers are always null, that's why they are floats/integers as opposed to strings. However,some layers can be both 
+## null and actual layers due to water presence at certain times of the year. That explains why I used two definitions 
+## (strings and floats) for numerous layers.
+
+comdata['elevation']=np.nan #This creates the column and fills cells with 'NaN's
+
+## The next lines define elevation numbers for each layer ##
+
+comdata.loc[comdata.Layer == 1, ['elevation']] =336.81
+comdata.loc[comdata.Layer == 2, ['elevation']] =335.31
+comdata.loc[comdata.Layer == 3, ['elevation']] =333.81
+comdata.loc[comdata.Layer == 4, ['elevation']] =332.31
+comdata.loc[comdata.Layer == 5, ['elevation']] =330.81
+comdata.loc[comdata.Layer == 6, ['elevation']] =329.31
+comdata.loc[comdata.Layer == 7, ['elevation']] =327.81
+comdata.loc[comdata.Layer == 8, ['elevation']] =326.31
+comdata.loc[comdata.Layer == 9, ['elevation']] =324.81
+comdata.loc[comdata.Layer == 10, ['elevation']] =323.31
+comdata.loc[comdata.Layer == '10', ['elevation']] =323.31
+comdata.loc[comdata.Layer == 11, ['elevation']] =321.81
+comdata.loc[comdata.Layer == '11', ['elevation']] =321.81
+comdata.loc[comdata.Layer == 12, ['elevation']] =320.31
+comdata.loc[comdata.Layer == '12', ['elevation']] =320.31
+comdata.loc[comdata.Layer == 13, ['elevation']] =318.81
+comdata.loc[comdata.Layer == '13', ['elevation']] =318.81
+comdata.loc[comdata.Layer == 14, ['elevation']] =317.31
+comdata.loc[comdata.Layer == '14', ['elevation']] =317.31
+comdata.loc[comdata.Layer == 15, ['elevation']] =315.81
+comdata.loc[comdata.Layer == '15', ['elevation']] =315.81
+comdata.loc[comdata.Layer == 16, ['elevation']] =314.31
+comdata.loc[comdata.Layer == '16', ['elevation']] =314.31
+comdata.loc[comdata.Layer == 17, ['elevation']] =312.81
+comdata.loc[comdata.Layer == '17', ['elevation']] =312.81
+comdata.loc[comdata.Layer == 18, ['elevation']] =311.31
+comdata.loc[comdata.Layer == '18', ['elevation']] =311.31
+comdata.loc[comdata.Layer == 19, ['elevation']] =309.81
+comdata.loc[comdata.Layer == '19', ['elevation']] =309.81
+comdata.loc[comdata.Layer == 20, ['elevation']] =308.31
+comdata.loc[comdata.Layer == '20', ['elevation']] =308.31
+comdata.loc[comdata.Layer == 21, ['elevation']] =306.81
+comdata.loc[comdata.Layer == '21', ['elevation']] =306.81
+comdata.loc[comdata.Layer == 22, ['elevation']] =305.31
+comdata.loc[comdata.Layer == '22', ['elevation']] =305.31
+comdata.loc[comdata.Layer == 23, ['elevation']] =303.81
+comdata.loc[comdata.Layer == '23', ['elevation']] =303.81
+comdata.loc[comdata.Layer == 24, ['elevation']] =302.31
+comdata.loc[comdata.Layer == '24', ['elevation']] =302.31
+comdata.loc[comdata.Layer == 25, ['elevation']] =300.81
+comdata.loc[comdata.Layer == '25', ['elevation']] =300.81
+comdata.loc[comdata.Layer == 26, ['elevation']] =299.31
+comdata.loc[comdata.Layer == '26', ['elevation']] =299.31
+comdata.loc[comdata.Layer == 27, ['elevation']] =297.81
+comdata.loc[comdata.Layer == '27', ['elevation']] =297.81
+comdata.loc[comdata.Layer == 28, ['elevation']] =296.31
+comdata.loc[comdata.Layer == '28', ['elevation']] =296.31
+comdata.loc[comdata.Layer == 29, ['elevation']] =294.81
+comdata.loc[comdata.Layer == '29', ['elevation']] =294.81
+comdata.loc[comdata.Layer == 30, ['elevation']] =293.31
+comdata.loc[comdata.Layer == '30', ['elevation']] =293.31
+comdata.loc[comdata.Layer == 31, ['elevation']] =291.06
+comdata.loc[comdata.Layer == '31', ['elevation']] =291.06
+comdata.loc[comdata.Layer == 32, ['elevation']] =288.06
+comdata.loc[comdata.Layer == '32', ['elevation']] =288.06
+comdata.loc[comdata.Layer == 33, ['elevation']] =285.06
+comdata.loc[comdata.Layer == '33', ['elevation']] =285.06
+comdata.loc[comdata.Layer == 34, ['elevation']] =282.06
+comdata.loc[comdata.Layer == '34', ['elevation']] =282.06
+comdata.loc[comdata.Layer == 35, ['elevation']] =279.06
+comdata.loc[comdata.Layer == '35', ['elevation']] =279.06
+comdata.loc[comdata.Layer == '36', ['elevation']] =276.06
+comdata.loc[comdata.Layer == '37', ['elevation']] =273.06
+comdata.loc[comdata.Layer == '38', ['elevation']] =270.06
+comdata.loc[comdata.Layer == '39', ['elevation']] =267.06
+comdata.loc[comdata.Layer == '40', ['elevation']] =264.06
+comdata.loc[comdata.Layer == '41', ['elevation']] =261.06
+comdata.loc[comdata.Layer == '42', ['elevation']] =258.06
+comdata.loc[comdata.Layer == '43', ['elevation']] =255.06
+comdata.loc[comdata.Layer == '44', ['elevation']] =252.06
+comdata.loc[comdata.Layer == '45', ['elevation']] =249.06
+comdata.loc[comdata.Layer == '46', ['elevation']] =246.06
+comdata.loc[comdata.Layer == '47', ['elevation']] =243.06
+comdata.loc[comdata.Layer == '48', ['elevation']] =240.06
+comdata.loc[comdata.Layer == '49', ['elevation']] =237.06
+comdata.loc[comdata.Layer == '50', ['elevation']] =232.56
+comdata.loc[comdata.Layer == '51', ['elevation']] =226.56
+comdata.loc[comdata.Layer == '52', ['elevation']] =220.56
+comdata.loc[comdata.Layer == '53', ['elevation']] =214.56
+comdata.loc[comdata.Layer == '54', ['elevation']] =208.56
+comdata.loc[comdata.Layer == '55', ['elevation']] =202.56
+comdata.loc[comdata.Layer == '56', ['elevation']] =196.56
+comdata.loc[comdata.Layer == '57', ['elevation']] =190.56
+comdata.loc[comdata.Layer == '58', ['elevation']] =184.56
+comdata.loc[comdata.Layer == '59', ['elevation']] =178.56
+comdata.loc[comdata.Layer == '60', ['elevation']] =172.56
+comdata.loc[comdata.Layer == 60, ['elevation']] =172.56 #Since layer 60 is an added layer, it is not a string like other numbers
+#comdata[:]
+
+
+### Checking to make sure no NaN values appear in the layer column of dataframe ###
+## This loop removes duplicates so you don't have to scroll through thousands of data ##
+## With some changing of variables, this loop is helpful to use for any other lists,series, etc. you want to check for any NaN values ##
+
+comdata_laylist = comdata.Layer.tolist()
+laylist =[] 
+for i in comdata_laylist:
+       if i not in laylist:
+            laylist.append(i)
+#laylist
+
+
+
+## Preparing to find minimum and maximum values for the graph## <-- This will  be useful when defining the colorbar ticks
+
+oddcomdata = comdata.drop('Layer', 1)
+oddcomdata = oddcomdata.drop('timeshot', 1)
+oddcomdata = oddcomdata.drop('elevation', 1) ### These lines take out columns that are not a part of the W2 output
+#oddcomdata
+
+
+## Finds the max value in the entire edited dataframe ##
+max_values = oddcomdata.max(axis=0, skipna=True, level=None, numeric_only=None)
+max(max_values)
+
+
+## Finds the min value in the entire edited dataframe ##
+min_values = oddcomdata.min(axis=0, skipna=True, level=None, numeric_only=None)
+min(min_values)
+
+
+## This iteration removes duplicates from the timeshot list ## <-- We don't need 59 of every timeshot number
+
+nondup_timenum =[] 
+for i in comdata['timeshot']:
+       if i not in nondup_timenum:
+        nondup_timenum.append(i)
+#nondup_timenum[:]
+
+## Since I added the 60th layer, the timeshot values for that layer are numpyfloat64, and converts the whole timeshot column too.
+##This iteration switches the list back to integers so it will work for graphing (numpyfloat64 values will not) ##
+
+non_numpy = [np.asscalar(np.int16(nondup_timenum[0]))]
+count = 0
+for i in nondup_timenum[1:]:
+    count = count + 1
+    non_numpy_int = np.asscalar(np.int16(nondup_timenum[count]))
+    non_numpy.append(non_numpy_int)
+#non_numpy[:]
+
+
+## This iteration loop turns all dates into a list of strings## (as opposed to a list of lists of strings) 
+## Basically to make it look nicer for the graph title ##
+
+graphdate = [''.join(date[0])] 
+count = 0
+for day in date[1:]:
+    count = count+1
+    blah = date[count]
+    datestring = ''.join(blah)
+    graphdate.append(datestring)
+#graphdate[:]
+
+## This next loop turns all graphdates into a file save friendly format## (nice to save graphs with dates in the file name)
+
+no_space_date = graphdate[0].replace(" ", "") #rids the spaces <--only for the first graphdate
+savedate = [no_space_date.replace(',','_')] #turns comma into an underline <--only for the first graphdate
+count = 0
+for day in graphdate[1:]:
+    count = count + 1
+    no_space_date_loop = graphdate[count].replace(" ", "") #rids the spaces
+    savedate_loop = no_space_date_loop.replace(',','_') #turns comma into an underline
+    savedate.append(savedate_loop)
+#savedate[:]
+
+
+adj_comdata=comdata[[col for col in comdata.columns if col not in ['Layer', 'elevation']]] ##made a new dataframe that is the same as comdata without Layer and Elevation
+adj_comdata['Dam']=adj_comdata[21.0].values #Created a 'dummy' column in newly made dataframe. Cell values are segment 21 values.
+## ^^ This new variable was used because I did not know how to have segment 21.0 values show in the graph ^^ ##
+
+adj_comdata.rename(columns={'Dam':0,21.0:1.2,20.0:3.484,19.0:5.4,18.0:7.876,17.0:9.836,16.0:12.178,15.0:14.426,41.0:16.93,40.0:19.03,39.0:20.854,38.0:23.426,37.0:25.61,36.0:27.878,35.0:30.242,34.0:32.51,33.0:34.43,32.0:39.135},inplace=True)##Replaces column names with beginning KM distances from the dam for each segment 
+adj_t_comdata=adj_comdata[[col for col in adj_comdata.columns if col not in ['timeshot']]] ##making a new dataframe that does not include timeshot
+el_adj_comdata =comdata[[row for row in comdata.columns if row in ['elevation']]] ##makes new dataframe that includes elevation but not layer and timeshot
+
+el_adj_comdata = el_adj_comdata['elevation'].tolist() #turns dataframe with elevation column to a list
+adj_comdata.index = el_adj_comdata ##This is an important line. If puts the elevation measurements as the index of the dataframe used in the graph--which is 'adj_comdata'
+
+adj_t_comdata =adj_t_comdata[[0,1.200,3.484,5.400,7.876,9.836,12.178,14.426,16.930,19.030,20.854,23.426,25.610,27.878,30.242,32.510,34.430,39.135]] # be aware that this is measured in km not m.
+#adj_t_comdata
+
+##The message that pops up when executing this command box is irrelevant. It's just another way to complete the 3rd line in this box.
+    
+
+
+## iteration loop to create all the graphs for each day in the snp file ##
+
+plt.ioff() #Turns interactive plotting off. Helps save memory when downloading an entire water year.
+
+for i in non_numpy[0:1]: #IF YOU WANT JUST A SINGLE GRAPH, PICK ANY TWO CONSECUTIVE NUMBERS TO USE ON EITHER SIDE OF the COLON WITHIN THE BRACKETS
+#enter the Julian day on right side and use Julian day - 1 on the left to get specific julian day.    
+    Jul_day = nondup_timenum[i-1]
+    time = graphdate[i-1] #used for title of graph 
+    file_date = savedate[i-1] #used for file name when saved
+    fig= plt.figure(figsize=(50, 30)) #created figure size. First number is length, second is width.
+    cols = [col for col in adj_t_comdata.columns] ## removing columns in dataframe that we don't want to graph
+    ax=fig.add_subplot(111) #creates a subplot
+    x=adj_comdata[adj_comdata.timeshot==i][cols].columns.values #establishes the x-axis -- segment lengths
+    y=adj_comdata[adj_comdata.timeshot==i][cols].index.values ##establishes the y-axis -- elevation of different layers
+    X,Y=np.meshgrid(x, y) #combines both axes into one plot
+    im =ax.contourf(X,Y,adj_comdata[adj_comdata.timeshot==i][cols].values,cmap=cm.get_cmap('jet'),levels = np.linspace(0,31,200)) ##creates the graph using the X and Y specified at the timeshot. If you want to increase interpolation, increase the last number of 'np.linspace'
+    #im =ax.contourf(X,Y,adj_comdata[adj_comdata.timeshot==i][cols].values,cmap=plt.cm.gray,levels = np.linspace(2,31,200)) ##creates the graph using the X and Y specified at the timeshot
+    ##^^This line is used if you want a grayscale of the graph^^## <--if so, comment out the line before
+    #im = ax.imshow(adj_comdata[adj_comdata.timeshot==501][cols],interpolation='nearest',origin='upper',aspect='auto',cmap=cm.get_cmap('jet'),)
+    ## ^^This line is an alternative to graph the data. However, the 'imshow' function is used for static/still images rather
+    ## ^^than irregular/dynamic data such as our dataframe. I used this function for a while until I found out that you cannot 
+    ## ^^fix ticks proportionally to the data because imshow only reads data as an image, not as a dynamic dataset.
+    #ax.invert_xaxis() ## REVERSES THE X-AXIS <-- Which side do you want the Dam on? This command should switch it.
+    plt.xticks(np.arange(min(adj_comdata[adj_comdata.timeshot==i][cols].columns.values),41,5)) ##defines the xticks (first, last, interval inbetween)
+    plt.yticks(np.arange(int(min(adj_comdata[adj_comdata.timeshot==i][cols].index.values)-2), int(340), 20)) #defines the yticks (first, last, interval inbetween)
+    ## These next four lines establish the minor ticks (ticks that are not labeled)
+    xminorLocator = AutoMinorLocator()
+    yminorLocator = AutoMinorLocator()
+    ax.xaxis.set_minor_locator(xminorLocator)
+    ax.yaxis.set_minor_locator(yminorLocator) 
+    ax.tick_params(axis='both', which='major', labelsize=60) # sets size of the major ticks for both axes
+    ax.tick_params(axis = 'both', which='minor', width = 2, length=12) # sets length of the minor ticks for both axes
+    #ax.invert_xaxis() ## REVERSES THE X-AXIS <-- Which side do you want the Dam on? This command should switch it.
+    ax.xaxis.set_tick_params(width=5, length=16) # sets size and length of major ticks for x-axis
+    ax.yaxis.set_tick_params(width=5,length =16) # sets size and length of major ticks for y-axis
+    cbar = fig.colorbar(im, cmap=cm.get_cmap('jet'), norm=None, alpha=None, values=None, boundaries=None, orientation=u'vertical', ticklocation=u'auto', extend=u'neither', spacing=u'uniform', ticks=[0.0,5.0,10.0,15.0,20.0,25.0,30.0,32.0], format=None, drawedges=False, filled=True, extendfrac=None, extendrect=False) ##creates colorbar
+    #cbar = fig.colorbar(im, cmap=plt.cm.gray, norm=None, alpha=None, values=None, boundaries=None, orientation=u'vertical', ticklocation=u'auto', extend=u'neither', spacing=u'uniform', ticks=[0.0,5.0,10.0,15.0,20.0,25.0,30.0,32.0], format=None, drawedges=False, filled=True, extendfrac=None, extendrect=False) ##creates colorbar
+    ##^^This line is used if you want a grayscale of the graph^^## <--if so, comment out the line before
+    cbar.ax.tick_params(labelsize=60) #sets the tick size for colorbar
+    #Next lines add titles to each axis and a single main title
+    figure_title = "Temperature Conditions of McCloud River" + "\n" + str(time) # think of the 'time' variable as the date.
+    plt.title(figure_title, y=1.16,fontsize = 75) # The 'y=' statement moves the title so there's more white space between graph and title
+    fig.text(0.90,0.42,r"Temperature ($\degree$C)",ha='center',va='center',rotation='vertical', fontsize = 75)#first two numbers set where the title is placed. If you want more white space between title and plot, change these numbers.
+    fig.text(-0.09,0.42,r"Elevation (m)",ha='center',va='center',rotation='vertical', fontsize = 75) #first two numbers set where the title is placed. If you want more white space between title and plot, change these numbers.
+    fig.text(0.42,0.02,r'Distance from Dam (km)',ha='center',va='center',rotation='horizontal',fontsize=75)#first two numbers set where the title is placed. If you want more white space between title and plot, change these numbers.
+    plt.tight_layout(pad=12) ##Expands graph to fit entire plot area. The 'pad' leaves white space around the plot so there's room for titles.
+    ## dpi is used to increase the resolution of 'dots per inch'. It doesn't affect our graphs much at all except for 
+    ## the amount of bytes used to save. More dpi=more bytes.
+    fig.savefig(str(Jul_day)+'_'+str(file_date)+'_McCloud_fig.png',bbox_inches='tight', pad_inches=0.6, dpi=50) ## bbox is used so we have a 'tight' saved figure and the pad leaves some white space around the edges.
+    plt.close(fig) #makes sure that figures don't output within this program
+
+
+### SOMETHING TO BE NOTED AND FIXED IN THE FUTURE: ###
+### Segment 32 for the McCloud and Segments 44 and 45 for the Sacramento have only one water layer present for some portion 
+### of time. When this occurs, the graphing script fails to represent the presence of water.However, once there are two layers 
+### filled with water, the segments are accurately depicted in the graph to have water. This is probably due to the fact that
+### the top layer is often not filled completely, therefore the graph doesn't register the layer as having water. 
+
+### In the future, we need to import the top layer depths at which temperatures were modeled and import them into the dataframe.
+### Then, we can accurately represent the top layer containing water for these ending segments.
+
+
+
+
+## YOU MAY DISREGARD THIS CODE BOX ##
+## This code is indentical to coding above but has slight changes in order to INCREASE DPI and have NO SPACE BETWEEN TITLES 
+## AND PLOT ##
+## This was used to provide nicer graphs for my research poster ##
+
+## iteration loop to create all the graphs for each day in the snp file ##
+
+plt.ioff() #Turns interactive plotting off. Helps save memory when downloading an entire water year and more.
+
+for i in non_numpy[600:601]: #IF YOU WANT JUST A SINGLE GRAPH, PICK ANY TWO CONSECUTIVE NUMBERS TO USE ON EITHER SIDE OF the COLON WITHIN THE BRACKETS
+    Jul_day = nondup_timenum[i-1]
+    time = graphdate[i-1] #used for title of graph 
+    file_date = savedate[i-1] #used for file name when saved
+    fig= plt.figure(figsize=(50, 30)) #created figure size. First number is length, second is width.
+    cols = [col for col in adj_t_comdata.columns] ## removing columns in dataframe that we don't want to graph
+    ax=fig.add_subplot(111) #creates a subplot
+    x=adj_comdata[adj_comdata.timeshot==i][cols].columns.values #establishes the x-axis -- segment lengths
+    y=adj_comdata[adj_comdata.timeshot==i][cols].index.values ##establishes the y-axis -- elevation of different layers
+    X,Y=np.meshgrid(x, y) #combines both axes into one plot
+    im =ax.contourf(X,Y,adj_comdata[adj_comdata.timeshot==i][cols].values,cmap=cm.get_cmap('jet'),levels = np.linspace(0,31,200)) ##creates the graph using the X and Y specified at the timeshot. If you want to increase interpolation, increase the last number of 'np.linspace'
+    #im =ax.contourf(X,Y,adj_comdata[adj_comdata.timeshot==i][cols].values,cmap=plt.cm.gray,levels = np.linspace(2,31,200)) ##creates the graph using the X and Y specified at the timeshot
+    ##^^This line is used if you want a grayscale of the graph^^## <--if so, comment out the line before
+    #im = ax.imshow(adj_comdata[adj_comdata.timeshot==501][cols],interpolation='nearest',origin='upper',aspect='auto',cmap=cm.get_cmap('jet'),)
+    ## ^^This line is an alternative to graph the data. However, the 'imshow' function is used for static/still images rather
+    ## ^^than irregular/dynamic data such as our dataframe. I used this function for a while until I found out that you cannot 
+    ## ^^fix ticks proportionally to the data because imshow only reads data as an image, not as a dynamic dataset.
+    #ax.invert_xaxis() ## REVERSES THE X-AXIS <-- Which side do you want the Dam on? This command should switch it.
+    plt.xticks(np.arange(min(adj_comdata[adj_comdata.timeshot==i][cols].columns.values),41,5)) ##defines the xticks (first, last, interval inbetween)
+    plt.yticks(np.arange(int(min(adj_comdata[adj_comdata.timeshot==i][cols].index.values)-2), int(340), 20)) #defines the yticks (first, last, interval inbetween)
+    ## These next four lines establish the minor ticks (ticks that are not labeled)
+    xminorLocator = AutoMinorLocator()
+    yminorLocator = AutoMinorLocator()
+    ax.xaxis.set_minor_locator(xminorLocator)
+    ax.yaxis.set_minor_locator(yminorLocator) 
+    ax.tick_params(axis='both', which='major', labelsize=60) # sets size of the major ticks for both axes
+    ax.tick_params(axis = 'both', which='minor', width = 2, length=12) # sets length of the minor ticks for both axes
+    #ax.invert_xaxis() ## REVERSES THE X-AXIS <-- Which side do you want the Dam on? This command should switch it.
+    ax.xaxis.set_tick_params(width=5, length=16) # sets size and length of major ticks for x-axis
+    ax.yaxis.set_tick_params(width=5,length =16) # sets size and length of major ticks for y-axis
+    cbar = fig.colorbar(im, cmap=cm.get_cmap('jet'), norm=None, alpha=None, values=None, boundaries=None, orientation=u'vertical', ticklocation=u'auto', extend=u'neither', spacing=u'uniform', ticks=[0.0,5.0,10.0,15.0,20.0,25.0,30.0,32.0], format=None, drawedges=False, filled=True, extendfrac=None, extendrect=False) ##creates colorbar
+    #cbar = fig.colorbar(im, cmap=plt.cm.gray, norm=None, alpha=None, values=None, boundaries=None, orientation=u'vertical', ticklocation=u'auto', extend=u'neither', spacing=u'uniform', ticks=[0.0,5.0,10.0,15.0,20.0,25.0,30.0,32.0], format=None, drawedges=False, filled=True, extendfrac=None, extendrect=False) ##creates colorbar
+    ##^^This line is used if you want a grayscale of the graph^^## <--if so, comment out the line before
+    cbar.ax.tick_params(labelsize=60) #sets the tick size for colorbar
+    #Next lines add titles to each axis and a single main title
+    figure_title = "Temperature Conditions of McCloud River" + "\n" + str(time) # think of the 'time' variable as the date.
+    plt.title(figure_title, y=1.01,fontsize = 75) # The 'y=' statement moves the title so there's more white space between graph and title
+    fig.text(0.91,0.42,r"Temperature ($\degree$C)",ha='center',va='center',rotation='vertical', fontsize = 75)#first two numbers set where the title is placed. If you want more white space between title and plot, change these numbers.
+    fig.text(0.001,0.42,r"Elevation (m)",ha='center',va='center',rotation='vertical', fontsize = 75) #first two numbers set where the title is placed. If you want more white space between title and plot, change these numbers.
+    fig.text(0.42,0.02,r'Distance from Dam (km)',ha='center',va='center',rotation='horizontal',fontsize=75)#first two numbers set where the title is placed. If you want more white space between title and plot, change these numbers.
+    plt.tight_layout(pad=10) ##Expands graph to fit entire plot area. The 'pad' leaves white space around the plot so there's room for titles.
+    ## dpi is used to increase the resolution of 'dots per inch'. It doesn't affect our graphs much at all except for 
+    ## the amount of bytes used to save. More dpi=more bytes.
+    fig.savefig(str(Jul_day)+'_'+str(file_date)+'_McCloud_(Without)_fig.png',bbox_inches='tight', pad_inches=0.6, dpi=300) ## bbox is used so we have a 'tight' saved figure and the pad leaves some white space around the edges.
+    plt.close(fig) #makes sure that figures don't output within this program
+
+
+
