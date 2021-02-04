@@ -3,7 +3,7 @@ These Python code excerpts are from my 2015 research at the University of Nevada
 
 The mp4 file is a "movie" of animated hydrologic output from each day for an entire hydrologic year for the McCloud River.
 
-Please let me know if you have any questions. Thanks for connecting with me earlier today and for sharing more about the position. Looking forward to hearing from you!
+Please let me know if you have any questions. Looking forward to hearing from you!
 
 Sincerely,
 Kurt
